@@ -124,6 +124,62 @@ def upload_csv():
     conn.commit()
     return jsonify(response), 200
 
+@app.route('/employees-hired-by-job-department-quarter', methods=['GET'])
+def get_employees_hired_by_job_department_quarter():
+    query = """
+        SELECT d.department, j.job,
+            SUM(CASE WHEN DATE_PART('quarter', TRY_TO_TIMESTAMP(e.datetime, 'YYYY-MM-DDThh24:mi:ssZ')) = 1 THEN 1 ELSE 0 END) AS Q1,
+            SUM(CASE WHEN DATE_PART('quarter', TRY_TO_TIMESTAMP(e.datetime, 'YYYY-MM-DDThh24:mi:ssZ')) = 2 THEN 1 ELSE 0 END) AS Q2,
+            SUM(CASE WHEN DATE_PART('quarter', TRY_TO_TIMESTAMP(e.datetime, 'YYYY-MM-DDThh24:mi:ssZ')) = 3 THEN 1 ELSE 0 END) AS Q3,
+            SUM(CASE WHEN DATE_PART('quarter', TRY_TO_TIMESTAMP(e.datetime, 'YYYY-MM-DDThh24:mi:ssZ')) = 4 THEN 1 ELSE 0 END) AS Q4
+        FROM employees e
+        JOIN departments d ON e.department_id = d.id
+        JOIN jobs j ON e.job_id = j.id
+        WHERE DATE_PART('year', TRY_TO_TIMESTAMP(e.datetime, 'YYYY-MM-DDThh24:mi:ssZ')) = 2021
+        GROUP BY d.department, j.job
+        ORDER BY d.department, j.job;
+    """
+    cursor = conn.cursor()
+    cursor.execute(query)
+    data = cursor.fetchall()
+    cursor.close()
+
+    columns = ['department', 'job', 'Q1', 'Q2', 'Q3', 'Q4']
+    table = [dict(zip(columns, row)) for row in data]
+
+    return jsonify(table)
+
+@app.route('/departments-hired-above-mean', methods=['GET'])
+def get_departments_hired_above_mean():
+    query = """
+        WITH mean_hired AS (
+            SELECT AVG(count_hired) AS mean_hired
+            FROM (
+                SELECT d.department, COUNT(*) AS count_hired
+                FROM employees e
+                JOIN departments d ON e.department_id = d.id
+                WHERE DATE_PART('year', TRY_TO_TIMESTAMP(e.datetime, 'YYYY-MM-DDThh24:mi:ssZ')) = 2021
+                GROUP BY d.department
+            )
+        )
+        SELECT d.id, d.department, COUNT(*) AS hired
+        FROM employees e
+        JOIN departments d ON e.department_id = d.id
+        WHERE DATE_PART('year', TRY_TO_TIMESTAMP(e.datetime, 'YYYY-MM-DDThh24:mi:ssZ')) = 2021
+        GROUP BY d.id, d.department
+        HAVING COUNT(*) > (SELECT mean_hired FROM mean_hired)
+        ORDER BY hired DESC;
+    """
+    cursor = conn.cursor()
+    cursor.execute(query)
+    data = cursor.fetchall()
+    cursor.close()
+
+    columns = ['id', 'department', 'hired']
+    result = [dict(zip(columns, row)) for row in data]
+
+    return jsonify(result)
+
 asgi_app = WsgiToAsgi(app)
 
 if __name__ == '__main__':
