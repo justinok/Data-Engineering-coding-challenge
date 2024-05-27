@@ -42,6 +42,17 @@ def load_csv_to_df(file_path, columns):
     return pd.read_csv(file_path, names=columns)
 
 
+def query_to_dataframe(query):
+    cursor = conn.cursor()
+    cursor.execute(query)
+    data = cursor.fetchall()
+    columns = [desc[0] for desc in cursor.description]
+    cursor.close()
+    df = pd.DataFrame(data, columns=columns)
+    return df
+
+
+
 def preprocess_df(df, column_types):
     for column, col_type in column_types.items():
         if col_type == "int":
@@ -128,7 +139,11 @@ def upload_csv():
 
                 df = load_csv_to_df(filepath, columns)
                 df = preprocess_df(df, column_types)
-                insert_data_in_batches(df, table_name)
+                query = f"SELECT * FROM {table_name}"
+                df_snowflake = query_to_dataframe(query)
+                df_to_insert = df[~df.isin(df_snowflake)].dropna()
+                if not df_to_insert.empty:
+                    insert_data_in_batches(df_to_insert, table_name)
 
             except Exception as e:
                 logger.error(f"Error processing file {filename}: {e}")
